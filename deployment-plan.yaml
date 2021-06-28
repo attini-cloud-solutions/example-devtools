@@ -1,0 +1,503 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform:
+  - AttiniDeploymentPlan
+  - AWS::Serverless-2016-10-31
+
+Parameters:
+  AttiniEnvironmentName:
+    Type: String
+
+  AttiniDistributionName:
+    Type: String
+
+  AttiniDistributionId:
+    Type: String
+
+  OrganizationName:
+    Type: String
+
+
+Resources:
+
+  DevtoolsDeploy:
+    Type: Attini::Deploy::DeploymentPlan
+    Properties:
+      # ServiceToken: !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:AttiniPipeline
+      DeploymentPlan:
+        StartAt: Step1
+        States:
+          Step1:
+            Type: Parallel
+            Next: MergeOutputsFromStep1
+            Branches:
+              -
+                StartAt: GetOrgId
+                States:
+                  GetOrgId:
+                    Type: Task
+                    Resource: !GetAtt DeployHelperLambda.Arn
+                    Parameters:
+                      Input.$: $
+                      Action: GetOrgId
+                    Next: BuildArtifactsBucket
+
+                  BuildArtifactsBucket:
+                    Type: AttiniCfn
+                    Properties:
+                      Template: /cfn-templates/build-artifacts-bucket.yaml
+                      StackName: !Sub ${AttiniEnvironmentName}-build-artifacts-bucket
+                      Parameters:
+                        OrganizationName: !Ref OrganizationName
+                        OrgId.$: $.customData.orgId
+                    End: true
+              -
+                StartAt: BuildSystemsSecurityResources
+                States:
+                  BuildSystemsSecurityResources:
+                    Type: AttiniCfn
+                    Properties:
+                      Template: /cfn-templates/build-systems-security-resources.yaml
+                      StackName: !Sub ${AttiniEnvironmentName}-build-systems-security-resources
+                    End: true
+
+          MergeOutputsFromStep1:
+            Type: AttiniMergeOutput
+            Next: BuildProjects
+
+          BuildProjects:
+            Type: Parallel
+            End: True
+            Branches:
+              -
+                StartAt: BuildImageRepository
+                States:
+                  BuildImageRepository:
+                    Type: AttiniCfn
+                    Next: CodeBuildAndImageBuilder
+                    Properties:
+                      Template: /cfn-templates/ecr-repository.yaml
+                      StackName: !Sub ${AttiniEnvironmentName}-build-container-repository
+                      Parameters:
+                        RepositoryName: !Sub ${AttiniEnvironmentName}-build-containers
+                        OrgId.$: $.customData.orgId
+                    End: true
+
+                  CodeBuildAndImageBuilder:
+                    Type: Parallel
+                    End: True
+                    Branches:
+                    -
+                      StartAt: BuildProject
+                      States:
+                        BuildProject:
+                          Type: AttiniCfn
+                          End: true
+                          Properties:
+                            Template: /cfn-templates/codebuild-project.yaml
+                            StackName: !Sub ${AttiniEnvironmentName}-attini-cli-build-images
+                            Parameters:
+                              ProjectName: attini-cli-build-images
+                              RoleArn.$: !Sub $.cfnOutput.${AttiniEnvironmentName}-build-systems-security-resources.BuildProjectDefaultRoleArn
+                              BuildArtifactsBucket.$: !Sub $.cfnOutput.${AttiniEnvironmentName}-build-artifacts-bucket.BuildArtifactsBucket
+                              ComputeType: BUILD_GENERAL1_SMALL
+                              RepositoryUri.$: !Sub $.cfnOutput.${AttiniEnvironmentName}-build-container-repository.RepositoryUri
+                              GitUrl: https://github.com/my-orgnaization/test-repository.git # test url
+
+                    -
+                      StartAt: GetBuildImageComponentVersion
+                      States:
+                        GetBuildImageComponentVersion:
+                          Type: Task
+                          Resource: !GetAtt GetImageBuilderVersionLambda.Arn
+                          Parameters:
+                            Input.$: $
+                            StackName: !Sub ${AttiniEnvironmentName}-build-image-component
+                            Template: /cfn-templates/image-builder-components/build-image-component.yaml
+                            ResourceName: ImageBuilderComponent
+                            Parameters:
+                              Version: 0.1.X
+                          Next: BuildImageComponent
+
+                        BuildImageComponent:
+                          Type: AttiniCfn
+                          Next: GetBuildImageContainerRecipeVersion
+                          Properties:
+                            Template: /cfn-templates/image-builder-components/build-image-component.yaml
+                            StackName: !Sub ${AttiniEnvironmentName}-build-image-component
+                            Parameters:
+                              Version.$: !Sub $.customData.imageBuilderVersion.${AttiniEnvironmentName}-build-image-component.version
+
+                        GetBuildImageContainerRecipeVersion:
+                          Type: Task
+                          Next: BuildImageBuilder
+                          Resource: !GetAtt GetImageBuilderVersionLambda.Arn
+                          Parameters:
+                            Input.$: $
+                            StackName: !Sub ${AttiniEnvironmentName}-build-image-builder
+                            Template: /cfn-templates/image-builder.yaml
+                            ResourceName: ContainerRecipe
+                            Parameters:
+                              Version: 0.1.X
+                              InstanceProfile.$: !Sub $.cfnOutput.${AttiniEnvironmentName}-build-systems-security-resources.ImageBuilderDefaultInstanceProfile
+                              SecurityGroupId.$: !Sub $.cfnOutput.${AttiniEnvironmentName}-build-systems-security-resources.DefaultSecurityGroupId
+                              ParentImage: public.ecr.aws/amazonlinux/amazonlinux:latest
+                              TargetRepository.$: !Sub $.cfnOutput.${AttiniEnvironmentName}-build-container-repository.RepositoryName
+                              Component.$:  !Sub $.cfnOutput.${AttiniEnvironmentName}-build-image-component.Component
+
+                        BuildImageBuilder:
+                          Type: AttiniCfn
+                          Next: RunBuildImageBuilder?
+                          Properties:
+                            Template: /cfn-templates/image-builder.yaml
+                            StackName: !Sub ${AttiniEnvironmentName}-build-image-builder
+                            Parameters:
+                              Version.$: !Sub $.customData.imageBuilderVersion.${AttiniEnvironmentName}-build-image-builder.version
+                              InstanceProfile.$: !Sub $.cfnOutput.${AttiniEnvironmentName}-build-systems-security-resources.ImageBuilderDefaultInstanceProfile
+                              SecurityGroupId.$: !Sub $.cfnOutput.${AttiniEnvironmentName}-build-systems-security-resources.DefaultSecurityGroupId
+                              ParentImage: public.ecr.aws/amazonlinux/amazonlinux:latest
+                              TargetRepository.$: !Sub $.cfnOutput.${AttiniEnvironmentName}-build-container-repository.RepositoryName
+                              Component.$:  !Sub $.cfnOutput.${AttiniEnvironmentName}-build-image-component.Component
+
+                        RunBuildImageBuilder?:
+                          Type: Choice
+                          Choices:
+                            - Variable: !Sub $.customData.imageBuilderVersion.${AttiniEnvironmentName}-build-image-builder.isNewVersion
+                              BooleanEquals: false
+                              Next: BuildImageDone
+                            - Variable: !Sub $.customData.imageBuilderVersion.${AttiniEnvironmentName}-build-image-builder.isNewVersion
+                              BooleanEquals: true
+                              Next: RunBuildImageBuilder
+
+                        RunBuildImageBuilder:
+                          Type: Task
+                          Resource: !GetAtt DeployHelperLambda.Arn
+                          Parameters:
+                            Input.$: $
+                            Action: RunBuildImageBuilder
+                            PipelineArn.$: !Sub $.cfnOutput.${AttiniEnvironmentName}-build-image-builder.PipelineArn
+                          End: True
+
+                        BuildImageDone:
+                          Type: Succeed
+
+              -
+                StartAt: ApplicationBaseImage
+                States:
+                  ApplicationBaseImage:
+                    Type: AttiniCfn
+                    Properties:
+                      Template: /cfn-templates/ecr-repository.yaml
+                      StackName: !Sub ${AttiniEnvironmentName}-application-base-image-repository
+                      Parameters:
+                        RepositoryName: !Sub ${AttiniEnvironmentName}-application-base-image
+                        OrgId.$: $.customData.orgId
+                    Next: GetApplicationBaseImageComponentVersion
+
+                  GetApplicationBaseImageComponentVersion:
+                    Type: Task
+                    Resource: !GetAtt GetImageBuilderVersionLambda.Arn
+                    Parameters:
+                      Input.$: $
+                      StackName: !Sub ${AttiniEnvironmentName}-application-base-image-component
+                      Template: /cfn-templates/image-builder-components/application-base-image-component.yaml
+                      ResourceName: ImageBuilderComponent
+                      Parameters:
+                        Version: 0.1.X
+                    Next: ApplicationBaseImageComponent
+
+                  ApplicationBaseImageComponent:
+                    Type: AttiniCfn
+                    Next: GetApplicationBaseImageContainerRecipeVersion
+                    Properties:
+                      Template: /cfn-templates/image-builder-components/application-base-image-component.yaml
+                      StackName: !Sub ${AttiniEnvironmentName}-application-base-image-component
+                      Parameters:
+                        Version.$: !Sub $.customData.imageBuilderVersion.${AttiniEnvironmentName}-application-base-image-component.version
+
+                  GetApplicationBaseImageContainerRecipeVersion:
+                    Type: Task
+                    Next: ApplicationBaseImageBuilder
+                    Resource: !GetAtt GetImageBuilderVersionLambda.Arn
+                    Parameters:
+                      Input.$: $
+                      StackName: !Sub ${AttiniEnvironmentName}-application-base-image-builder
+                      Template: /cfn-templates/image-builder.yaml
+                      ResourceName: ContainerRecipe
+                      Parameters:
+                        Version: 0.1.X
+                        InstanceProfile.$: !Sub $.cfnOutput.${AttiniEnvironmentName}-build-systems-security-resources.ImageBuilderDefaultInstanceProfile
+                        SecurityGroupId.$: !Sub $.cfnOutput.${AttiniEnvironmentName}-build-systems-security-resources.DefaultSecurityGroupId
+                        ParentImage: public.ecr.aws/amazonlinux/amazonlinux:latest
+                        TargetRepository.$: !Sub $.cfnOutput.${AttiniEnvironmentName}-application-base-image-repository.RepositoryName
+                        Component.$:  !Sub $.cfnOutput.${AttiniEnvironmentName}-application-base-image-component.Component
+
+                  ApplicationBaseImageBuilder:
+                    Type: AttiniCfn
+                    Next: RunApplicationBaseBuilder?
+                    Properties:
+                      Template: /cfn-templates/image-builder.yaml
+                      StackName: !Sub ${AttiniEnvironmentName}-application-base-image-builder
+                      Parameters:
+                        Version.$: !Sub $.customData.imageBuilderVersion.${AttiniEnvironmentName}-application-base-image-builder.version
+                        InstanceProfile.$: !Sub $.cfnOutput.${AttiniEnvironmentName}-build-systems-security-resources.ImageBuilderDefaultInstanceProfile
+                        SecurityGroupId.$: !Sub $.cfnOutput.${AttiniEnvironmentName}-build-systems-security-resources.DefaultSecurityGroupId
+                        ParentImage: public.ecr.aws/amazonlinux/amazonlinux:latest
+                        TargetRepository.$: !Sub $.cfnOutput.${AttiniEnvironmentName}-application-base-image-repository.RepositoryName
+                        Component.$:  !Sub $.cfnOutput.${AttiniEnvironmentName}-application-base-image-component.Component
+
+                  RunApplicationBaseBuilder?:
+                    Type: Choice
+                    Choices:
+                      - Variable: !Sub $.customData.imageBuilderVersion.${AttiniEnvironmentName}-application-base-image-builder.isNewVersion
+                        BooleanEquals: false
+                        Next: ApplicationBaseImageDone
+                      - Variable: !Sub $.customData.imageBuilderVersion.${AttiniEnvironmentName}-application-base-image-builder.isNewVersion
+                        BooleanEquals: true
+                        Next: RunApplicationBaseBuilder
+
+                  RunApplicationBaseBuilder:
+                    Type: Task
+                    Resource: !GetAtt DeployHelperLambda.Arn
+                    Parameters:
+                      Input.$: $
+                      Action: RunImageBuilder
+                      PipelineArn.$: !Sub $.cfnOutput.${AttiniEnvironmentName}-application-base-image-builder.PipelineArn
+                    End: True
+
+                  ApplicationBaseImageDone:
+                    Type: Succeed
+
+  DeployHelperLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      Description: !Sub Gets config for ${AttiniDistributionName} Deployment Plan
+      InlineCode: !Sub |
+          import boto3
+          import os
+          import logging
+          import json
+          import uuid
+
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
+          org_client = boto3.client('organizations')
+          imagebuilder_client = boto3.client('imagebuilder')
+
+          def get_organization_id():
+            return org_client.describe_organization()["Organization"]["Id"]
+
+          def start_image_pipeline_execution(image_pipeline_arn):
+            imagebuilder_client.start_image_pipeline_execution(
+              imagePipelineArn = image_pipeline_arn,
+              clientToken = str(uuid.uuid4())
+            )
+
+          def lambda_handler(event, context):
+            logger.info(f'Got event: {json.dumps(event)}')
+
+            if event["Action"] == "GetOrgId":
+              event["Input"]["customData"]["orgId"] = get_organization_id()
+            elif event["Action"] == "RunImageBuilder":
+              start_image_pipeline_execution(event["PipelineArn"])
+
+            return event["Input"]
+
+      Handler: index.lambda_handler
+      MemorySize: 256
+      Runtime: python3.8
+      Timeout: 300
+      Policies:
+        Statement:
+          - Action:
+            - organizations:DescribeOrganization
+            - imagebuilder:StartImagePipelineExecution
+            Effect: Allow
+            Resource: "*"
+
+
+  ConfigHelperLambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${DeployHelperLambda}
+      RetentionInDays: 30
+
+
+  GetImageBuilderVersionLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      Description: !Sub Gets a new minor version for an image builder configuration
+      InlineCode: |
+        import boto3
+        import os
+        import logging
+        import json
+        from datetime import datetime, timedelta
+        from time import sleep
+        from botocore.exceptions import ClientError
+        from botocore.config import Config
+
+        logger = logging.getLogger()
+        logger.setLevel(logging.INFO)
+
+        config = Config(
+            retries={
+                'max_attempts': 30,
+                'mode': 'standard'
+            }
+        )
+
+        cfn_client = boto3.client('cloudformation', config = config)
+
+
+        def format_parameters(parameters):
+            formatted_parameters=[]
+            for key, value in parameters.items():
+                formatted_parameters.append({
+                    'ParameterKey': key,
+                    'ParameterValue': value
+                })
+            return formatted_parameters
+
+
+        def will_cfn_resource_be_replaced(change_set_name, stack_name, resource_name):
+            for i in range(0, 100):
+                change_set = cfn_client.describe_change_set(
+                    ChangeSetName=change_set_name,
+                    StackName=stack_name
+                )
+
+                if change_set["Status"] == "FAILED":
+                    logger.info(
+                        f"Changeset failed with reason: {change_set['StatusReason']}")
+                    return False
+                elif change_set["ExecutionStatus"] == "UNAVAILABLE":
+                    sleep(3)
+                    continue
+                elif change_set["ExecutionStatus"] == "AVAILABLE":
+                    change = list(filter(
+                        lambda r: r["ResourceChange"]["LogicalResourceId"] == resource_name, change_set["Changes"]))
+                    if change:
+                        if change[0]["ResourceChange"]["Replacement"] == "True":
+                            logger.info("Resource will be replaced")
+                            return True
+                        else:
+                            logger.info("Service will not be replaced")
+                            return False
+                    else:
+                        logger.info(f"Resource {resource_name} was not fount in template")
+                        return False
+
+                else:
+                    logger.error(f"Change set: {change_set}")
+                    raise RuntimeError(
+                        f"Change set {change_set_name} was in an unpredicted state")
+            # If we reach this point, it means that out Cloudfromaiton service have issues. Assuming that no change is done
+            return False
+
+
+        def create_change_set(stack_name, template_bucket, template_path, parameters, version):
+          change_set_name = f"{stack_name}-{datetime.now().strftime('%Y-%M-%d-%H-%M-%S')}"
+
+          parameters["Version"] = version
+          cfn_client.create_change_set(
+            StackName=stack_name,
+            TemplateURL=f'https://{template_bucket}.s3.amazonaws.com/{template_path}',
+            Parameters=format_parameters(parameters),
+            Capabilities=[
+                'CAPABILITY_IAM', 'CAPABILITY_NAMED_IAM', 'CAPABILITY_AUTO_EXPAND',
+            ],
+            ChangeSetName=change_set_name,
+            Description='Check if service will be replaced',
+            ChangeSetType="UPDATE",
+          )
+          return change_set_name
+
+
+        def get_current_version(stack_name):
+          stack_parameters = cfn_client.describe_stacks(
+            StackName = stack_name
+          )["Stacks"][0]["Parameters"]
+          return list(filter(lambda p: p["ParameterKey"] == "Version", stack_parameters))[0]["ParameterValue"]
+
+
+        def get_new_version(version, configured_version):
+          if version.split(".")[:2] != configured_version.split(".")[:2]:
+            logger.info("New major or minor version is configured, setting patch version to 0")
+            return configured_version.replace("X", "0")
+          version_list = version.split(".")
+          version_list[2] = str(int(version_list[-1][0])+1)
+
+          return ".".join(version_list)
+
+
+        def get_image_builder_version(stack_name, template_bucket, template_path, parameters, resource_name):
+          try:
+            current_version = get_current_version(stack_name)
+          except ClientError as e:
+            if e.response["Error"]["Code"] == "ValidationError" and e.response["Error"]["Message"] == (f"Stack with id {stack_name} does not exist"):
+              return {
+                "version": parameters["Version"].replace("X", "0"),
+                "isNewVersion": True
+              }
+
+
+            else:
+              raise e
+
+          version = {
+              "version": current_version,
+              "isNewVersion": False
+            }
+          change_set_name = create_change_set(stack_name, template_bucket, template_path, parameters, version["version"])
+
+          if will_cfn_resource_be_replaced(change_set_name, stack_name, resource_name):
+            version["version"] = get_new_version(version["version"], parameters["Version"])
+            version["isNewVersion"] = True
+
+          return version
+
+
+        def lambda_handler(event, context):
+          logger.info(f"Got event: {json.dumps(event)}")
+
+          template_bucket = event["Input"]["deploymentOriginData"]["deploymentSource"]["deploymentSourceBucket"]
+          template_path = event["Input"]["deploymentOriginData"]["deploymentSource"]["deploymentSourcePrefix"] + event["Template"]
+          if "imageBuilderVersion" not in event["Input"]["customData"]:
+              event["Input"]["customData"]["imageBuilderVersion"] = {}
+          stack_name = event["StackName"]
+          event["Input"]["customData"]["imageBuilderVersion"][stack_name] = get_image_builder_version(
+                                                                                                        stack_name,
+                                                                                                        template_bucket,
+                                                                                                        template_path,
+                                                                                                        event["Parameters"],
+                                                                                                        resource_name = event["ResourceName"]
+                                                                                                      )
+
+          return event["Input"]
+
+      Handler: index.lambda_handler
+      MemorySize: 256
+      Runtime: python3.8
+      Timeout: 300
+      Policies:
+        Statement:
+          - Action:
+            - cloudformation:DescribeStacks
+            - cloudformation:DescribeChangeSet
+            - cloudformation:CreateChangeSet
+            Effect: Allow
+            Resource: "*"
+          - Action:
+            - s3:GetObject*
+            # - s3:ListBuckets
+            Effect: Allow
+            Resource:
+            # - !Sub arn:aws:s3:::attini-artifact-store-${AWS::Region}-${AWS::AccountId}
+            - !Sub arn:aws:s3:::attini-artifact-store-${AWS::Region}-${AWS::AccountId}/${AttiniEnvironmentName}/${AttiniDistributionName}/* # This will only give access to this specific distributions files
+
+  GetImageBuilderVersionLambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${GetImageBuilderVersionLambda}
+      RetentionInDays: 30

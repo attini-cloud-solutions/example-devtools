@@ -1,0 +1,76 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description:  Amazon Elastic Container Registry (Amazon ECR) repository.
+
+Parameters:
+
+  RepositoryName:
+    Type: String
+    Description: The name of the ECR repository
+
+  OrgId:
+    Description: Organization Id
+    Type: String
+
+
+Resources:
+
+  EcrRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Ref RepositoryName
+      ImageTagMutability: MUTABLE
+      RepositoryPolicyText:
+        Version: 2008-10-17
+        Statement:
+        - Sid: AllowPull
+          Effect: Allow
+          Principal:
+            AWS: "*"
+          Action:
+            - ecr:GetDownloadUrlForLayer
+            - ecr:BatchGetImage
+            - ecr:BatchCheckLayerAvailability
+          Condition:
+            StringEquals:
+              aws:PrincipalOrgID: !Ref OrgId
+        - Sid: AllowCodeBuildPull
+          Effect: Allow
+          Principal:
+            Service: codebuild.amazonaws.com
+          Action:
+            - ecr:GetDownloadUrlForLayer
+            - ecr:BatchGetImage
+            - ecr:BatchCheckLayerAvailability
+        - Sid: AllowAll
+          Effect: Allow
+          Principal:
+            AWS: !Sub arn:aws:iam::${AWS::AccountId}:root
+          Action:
+          - ecr:*
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+              "rules": [
+                  {
+                      "rulePriority": 1,
+                      "description": "Removed untagged images",
+                      "selection": {
+                          "tagStatus": "untagged",
+                          "countType": "sinceImagePushed",
+                          "countUnit": "days",
+                          "countNumber": 30
+                      },
+                      "action": {
+                          "type": "expire"
+                      }
+                  }
+              ]
+          }
+
+
+Outputs:
+  RepositoryName:
+    Value: !Ref EcrRepository
+
+  RepositoryUri:
+    Value: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${EcrRepository}

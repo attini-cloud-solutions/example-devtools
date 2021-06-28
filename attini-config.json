@@ -1,0 +1,12 @@
+{
+  "distributionName": "build-resources",
+  "initDeployConfig": {
+    "template": "deployment-plan.yaml",
+    "stackName": "${environment}-${distributionName}-init-deploy",
+    "parameters": {
+      "default": {
+        "OrganizationName": "socks-online"
+      }
+    }
+  }
+}

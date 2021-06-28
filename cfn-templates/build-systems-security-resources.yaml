@@ -1,0 +1,146 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Static webpage built with s3 and cloudfront
+
+Parameters:
+  AttiniEnvironmentName:
+    Type: String
+    Description: The name of the environment the stack created belongs to.
+    Default: shared
+
+Resources:
+  BuildProjectDefaultRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub attini-default-build-role-${AWS::Region}
+      AssumeRolePolicyDocument:
+        Statement:
+        - Action: sts:AssumeRole
+          Effect: Allow
+          Principal:
+            Service: codebuild.amazonaws.com
+        Version: '2012-10-17'
+      ManagedPolicyArns:
+      - !Ref CodeBuildExecutionPolicy
+      - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+
+  CodeBuildExecutionPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Description: Basic execution for code build
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Action:
+            - s3:GetObject*
+            - s3:ListBucket
+            - s3:PutObject*
+            Effect: Allow
+            Resource: "*"
+          - Effect: Allow
+            Action:
+              - cloudformation:DescribeStacks
+            Resource: "*"
+            Sid: "DescribeStacks"
+          - Action:
+              - logs:DescribeLogGroups
+            Effect: Allow
+            Resource: "*"
+            Sid: ReadLogs
+          - Action:
+              - logs:CreateLogGroup
+              - logs:DeleteLogGroup
+              - logs:TagLogGroup
+              - logs:UntagLogGroup
+              - logs:PutRetentionPolicy
+              - logs:DeleteRetentionPolicy
+              - logs:CreateLogStream
+              - logs:DeleteLogStream
+              - logs:DescribeLogStreams
+              - logs:PutLogEvents
+            Effect: Allow
+            Resource:
+            - !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/codebuild/${AttiniEnvironmentName}*
+            Sid: "logs"
+          - Action:
+              - sts:AssumeRole
+            Effect: Allow
+            Resource: arn:aws:iam::*:role/*
+          - Action:
+              - ecr:BatchCheckLayerAvailability
+              - ecr:BatchGetImage
+              - ecr:GetDownloadUrlForLayer
+            Effect: Allow
+            Resource: "*"
+          - Action:
+              - ssm:Put*
+            Effect: Allow
+            Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/versions/*
+          - Action:
+              - ssm:Get*
+              - ssm:List*
+            Effect: Allow
+            Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/*
+          - Effect: Allow
+            Action:
+              - s3:ListAllMyBuckets
+            Resource: "*"
+          - Effect: Allow
+            Action:
+              - cloudformation:Describe*
+              - cloudformation:List*
+              - states:List*
+              - states:Describe*
+              - states:Get*
+            Resource: "*"
+          - Effect: Allow
+            Action:
+              - dynamodb:GetItem
+              - dynamodb:Query
+            Resource:
+              - !Sub arn:aws:dynamodb:*:*:table/AttiniDeployData*
+              - !Sub arn:aws:dynamodb:*:*:table/AttiniResourceState*
+
+
+  ImageBuilderDefaultInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+      - !Ref ImageBuilderDefaultRole
+
+  ImageBuilderDefaultRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Action: sts:AssumeRole
+          Effect: Allow
+          Principal:
+            Service: ec2.amazonaws.com
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+        - arn:aws:iam::aws:policy/EC2InstanceProfileForImageBuilderECRContainerBuilds
+
+  DefaultSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub Security group created by ${AWS::StackName}
+
+Outputs:
+
+  BuildProjectDefaultRoleArn:
+    Description: Default role for build projects
+    Value: !GetAtt  BuildProjectDefaultRole.Arn
+
+  DefaultSecurityGroupId:
+    Description: Default security group with high security
+    Value: !GetAtt DefaultSecurityGroup.GroupId
+
+  ImageBuilderDefaultInstanceProfile:
+    Description: Default instance profile for image builder
+    Value: !Ref  ImageBuilderDefaultInstanceProfile
+
+  ImageBuilderDefaultRoleArn:
+    Description: Default role for image builder
+    Value: !GetAtt  ImageBuilderDefaultRole.Arn

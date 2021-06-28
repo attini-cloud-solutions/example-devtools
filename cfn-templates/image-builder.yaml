@@ -1,0 +1,132 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Example of an image builder
+
+Parameters:
+  Version:
+    Type: String
+    Description: The Component and Recipe version
+    Default: 0.0.1
+
+  InstanceProfile:
+    Type: String
+    Description: Image builder instance profile
+
+  SecurityGroupId:
+    Type: String
+    Description: Image security group
+
+  ParentImage:
+    Type: String
+    Description: Parent image
+
+  TargetRepository:
+    Type: String
+    Description: Target repository
+
+  Component:
+    Type: String
+    Description: Target repository
+
+  Schedule:
+    Type: String
+    Description: When should the build run, find more info here https://docs.aws.amazon.com/imagebuilder/latest/userguide/cron-expressions.html
+    Default: cron(30 22 ? * mon#1 *)
+
+Resources:
+
+  Pipeline:
+    Type: AWS::ImageBuilder::ImagePipeline
+    Properties:
+      Description: !Sub Attini container image ${AWS::Region}
+      ContainerRecipeArn: !Ref ContainerRecipe
+      DistributionConfigurationArn: !Ref DistributionConfiguration
+      ImageTestsConfiguration:
+        ImageTestsEnabled: True
+        TimeoutMinutes: 60
+      InfrastructureConfigurationArn: !Ref InfrastructureConfiguration
+      Name: !Ref AWS::StackName
+      Schedule:
+        ScheduleExpression: !Ref Schedule
+      Status: ENABLED
+
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/imagebuilder/${AWS::StackName}
+      RetentionInDays: 90
+
+  ContainerRecipe:
+    Type: AWS::ImageBuilder::ContainerRecipe
+    Properties:
+      Components:
+        - ComponentArn: !Ref Component
+      ContainerType: DOCKER
+      Description: This is a image with basic AWS CI/CD programs and the Attini CLI
+      DockerfileTemplateData: |
+        FROM {{{ imagebuilder:parentImage }}}
+        {{{ imagebuilder:environments }}}
+        {{{ imagebuilder:components }}}
+      Name: !Ref AWS::StackName
+      ParentImage: !Ref ParentImage
+      PlatformOverride: Linux
+      TargetRepository:
+        RepositoryName: !Ref TargetRepository
+        Service: ECR
+      Version: !Ref Version
+
+  DistributionConfiguration:
+    Type: AWS::ImageBuilder::DistributionConfiguration
+    Properties:
+      Description: !Sub Created by ${AWS::StackName}
+      Distributions:
+        -
+          ContainerDistributionConfiguration:
+            containerTags:
+              - latest
+              - "{{ imagebuilder:buildDate }}"
+            targetRepository:
+              repositoryName: !Ref TargetRepository
+              service: ECR
+          Region: !Ref AWS::Region
+      Name: !Ref AWS::StackName
+
+  InfrastructureConfiguration:
+    Type: AWS::ImageBuilder::InfrastructureConfiguration
+    Properties:
+      InstanceProfileName: !Ref InstanceProfile
+      InstanceTypes:
+        - m5a.large
+      Name: !Ref AWS::StackName
+      SecurityGroupIds:
+        - !Ref SecurityGroupId
+      TerminateInstanceOnFailure: True
+
+  # SecurityGroup:
+  #   Type: AWS::EC2::SecurityGroup
+  #   Properties:
+  #     GroupDescription: !Sub Security group created by ${AWS::StackName}
+
+  # InstanceProfile:
+  #   Type: AWS::IAM::InstanceProfile
+  #   Properties:
+  #     Roles:
+  #     - !Ref ImageBuilderRole
+
+  # ImageBuilderRole:
+  #   Type: AWS::IAM::Role
+  #   Properties:
+  #     AssumeRolePolicyDocument:
+  #       Version: 2012-10-17
+  #       Statement:
+  #       - Action: sts:AssumeRole
+  #         Effect: Allow
+  #         Principal:
+  #           Service: ec2.amazonaws.com
+  #     ManagedPolicyArns:
+  #       - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+  #       - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+  #       - arn:aws:iam::aws:policy/EC2InstanceProfileForImageBuilderECRContainerBuilds
+
+Outputs:
+  PipelineArn:
+    Value: !Ref Pipeline

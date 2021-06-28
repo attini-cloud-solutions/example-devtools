@@ -1,0 +1,77 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: A bucket for build artifacts that allows all AWS Accounts in the organization to get objects
+
+Parameters:
+
+  AttiniEnvironmentName:
+    Type: String
+    Description: The name of the environment the stack created belongs to.
+    Default: shared
+
+  BucketName:
+    Type: String
+    Description: The bucket name suffix, the name will be [AttiniEnvironmentName]-[BucketName]
+    MinLength: 5
+    Default: attini-build-artifacts
+
+  OrganizationName:
+    Description: The bucket name will be ${AttiniEnvironmentName}-${OrganizationName}-build-artifacts-${AWS::Region}
+    Type: String
+
+  OrgId:
+    Description: Organization Id
+    Type: String
+
+
+Resources:
+  BuildArtifactsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub ${AttiniEnvironmentName}-${OrganizationName}-build-artifacts-${AWS::Region}-${AWS::AccountId}
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          -
+            ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          -
+            Id: MultipartUploadLifecycleRule
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
+          -
+            Id: NoncurrentVersionExpirationInDays
+            Status: Enabled
+            NoncurrentVersionExpirationInDays: 30
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+
+  BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref BuildArtifactsBucket
+      PolicyDocument:
+        Statement:
+          -
+            Action:
+              - s3:GetObject
+              - s3:ListBucket
+            Effect: Allow
+            Resource:
+              - !GetAtt BuildArtifactsBucket.Arn
+              - !Sub arn:aws:s3:::${BuildArtifactsBucket}/*
+            Principal: "*"
+            Condition:
+              StringEquals:
+                aws:PrincipalOrgID: !Ref OrgId
+
+
+Outputs:
+  BuildArtifactsBucket:
+    Description: The name of the S3 bucket
+    Value: !Ref BuildArtifactsBucket

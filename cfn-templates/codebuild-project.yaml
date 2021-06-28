@@ -1,0 +1,100 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Example Codebuild
+
+Parameters:
+  AttiniEnvironmentName:
+    Type: String
+    Description: The name of the environment the stack created belongs to.
+    Default: shared
+
+  BuildArtifactsBucket:
+    Type: String
+    MinLength: 2
+
+  ProjectName:
+    Type: String
+    MinLength: 2
+
+  SourceType:
+    Type: String
+    Default: GITHUB
+
+  GitUrl:
+    Type: String
+
+
+  ComputeType:
+    Type: String
+    Default: BUILD_GENERAL1_SMALL
+    AllowedValues:
+      - BUILD_GENERAL1_SMALL
+      - BUILD_GENERAL1_MEDIUM
+      - BUILD_GENERAL1_LARGE
+
+  BuildSpecPath:
+    Type: String
+    Default: ci-cd/build/buildspec.yaml
+
+  TimeoutInMinutes:
+    Type: Number
+    Default: 30
+
+  RoleArn:
+    Type: String
+
+  RepositoryUri:
+    Type: String
+
+
+Resources:
+
+  BuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub ${AttiniEnvironmentName}-${ProjectName}
+      Source:
+        BuildSpec: !Ref BuildSpecPath
+        Type:  !Ref SourceType
+        Location: !Ref GitUrl
+      ServiceRole:
+        !Ref RoleArn
+      Artifacts:
+        Type: NO_ARTIFACTS
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: !Ref ComputeType
+        Image: !Sub ${RepositoryUri}:latest
+        EnvironmentVariables:
+          -
+            Name: ENVIRONMENT_NAME
+            Value: !Ref AttiniEnvironmentName
+          -
+            Name: ACCOUNT_ID
+            Value: !Ref AWS::AccountId
+          -
+            Name: REGION
+            Value: !Ref AWS::Region
+          -
+            Name: BUILD_ARTIFACT_BUCKET
+            Value: !Ref BuildArtifactsBucket
+      TimeoutInMinutes: !Ref TimeoutInMinutes
+      LogsConfig:
+        CloudWatchLogs:
+          Status: ENABLED
+          GroupName: !Sub /codebuild/${AttiniEnvironmentName}-${ProjectName}
+
+  BuildProjectLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /codebuild/${AttiniEnvironmentName}-${ProjectName}
+      RetentionInDays: 30
+
+
+
+# Outputs:
+
+  # WebpageBucket:
+  #   Description: The name of the S3 bucket for the Static hostname
+  #   Value: !Ref WebpageBucket
+  #   Export:
+  #     Name: !Sub ${AWS::StackName}-bucket-name

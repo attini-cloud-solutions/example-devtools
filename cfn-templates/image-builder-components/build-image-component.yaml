@@ -1,0 +1,57 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Example of an image builder component
+
+Parameters:
+
+  Version:
+    Type: String
+    Description: The Component and Recipe version
+    Default: 0.0.1
+
+Resources:
+
+  ImageBuilderComponent:
+    Type: AWS::ImageBuilder::Component
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Name: !Ref AWS::StackName
+      Data: !Sub |
+        name: AttiniCli - InlineData
+        description: This is a image with basic AWS CI/CD programs and the Attini CLI
+        schemaVersion: 1.0
+
+        phases:
+          - name: build
+            steps:
+              - name: build
+                action: ExecuteBash
+                inputs:
+                  commands:
+                    - yum update -y
+                    - yum install python3 zip unzip curl jq -y
+                    - yum clean all && rm -rf /var/cache/yum
+                    - pip3 install awscli boto3 aws-sam-cli --no-cache-dir --user
+                    - curl -s -o /usr/local/bin/yq https://github.com/mikefarah/yq/releases/download/v4.9.0/yq_linux_amd64; chmod +x /usr/local/bin/yq
+                    - curl -s -o /usr/local/bin/attini https://docs.attini.io/blob/attini-cli/linux/latest/attini; chmod +x /usr/local/bin/attini
+
+          - name: verify
+            steps:
+              - name: verify
+                action: ExecuteBash
+                inputs:
+                  commands:
+                    - python3 --version
+                    - sam --version
+                    - aws --version
+                    - yq --version
+                    - attini --version
+
+      Platform: Linux
+      Version: !Ref Version
+
+
+Outputs:
+
+  Component:
+    Value: !Ref ImageBuilderComponent
