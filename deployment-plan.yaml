@@ -22,7 +22,6 @@ Resources:
   DevtoolsDeploy:
     Type: Attini::Deploy::DeploymentPlan
     Properties:
-      # ServiceToken: !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:AttiniPipeline
       DeploymentPlan:
         StartAt: Step1
         States:
@@ -267,6 +266,7 @@ Resources:
                   ApplicationBaseImageDone:
                     Type: Succeed
 
+
   DeployHelperLambda:
     Type: AWS::Serverless::Function
     Properties:
@@ -490,10 +490,8 @@ Resources:
             Resource: "*"
           - Action:
             - s3:GetObject*
-            # - s3:ListBuckets
             Effect: Allow
             Resource:
-            # - !Sub arn:aws:s3:::attini-artifact-store-${AWS::Region}-${AWS::AccountId}
             - !Sub arn:aws:s3:::attini-artifact-store-${AWS::Region}-${AWS::AccountId}/${AttiniEnvironmentName}/${AttiniDistributionName}/* # This will only give access to this specific distributions files
 
   GetImageBuilderVersionLambdaLogGroup:
