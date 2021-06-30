@@ -93,9 +93,9 @@ Resources:
                           End: true
                           Properties:
                             Template: /cfn-templates/codebuild-project.yaml
-                            StackName: !Sub ${AttiniEnvironmentName}-attini-cli-build-images
+                            StackName: !Sub ${AttiniEnvironmentName}-build-images
                             Parameters:
-                              ProjectName: attini-cli-build-images
+                              ProjectName: build-images
                               RoleArn.$: !Sub $.cfnOutput.${AttiniEnvironmentName}-build-systems-security-resources.BuildProjectDefaultRoleArn
                               BuildArtifactsBucket.$: !Sub $.cfnOutput.${AttiniEnvironmentName}-build-artifacts-bucket.BuildArtifactsBucket
                               ComputeType: BUILD_GENERAL1_SMALL
