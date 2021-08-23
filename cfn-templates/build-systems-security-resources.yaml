@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: 2010-09-09
-Description: Static webpage built with s3 and cloudfront
+Description: Security resources for the devtools setup
 
 Parameters:
   AttiniEnvironmentName:

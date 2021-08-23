@@ -88,13 +88,3 @@ Resources:
     Properties:
       LogGroupName: !Sub /codebuild/${AttiniEnvironmentName}-${ProjectName}
       RetentionInDays: 30
-
-
-
-# Outputs:
-
-  # WebpageBucket:
-  #   Description: The name of the S3 bucket for the Static hostname
-  #   Value: !Ref WebpageBucket
-  #   Export:
-  #     Name: !Sub ${AWS::StackName}-bucket-name

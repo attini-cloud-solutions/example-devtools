@@ -101,31 +101,6 @@ Resources:
         - !Ref SecurityGroupId
       TerminateInstanceOnFailure: True
 
-  # SecurityGroup:
-  #   Type: AWS::EC2::SecurityGroup
-  #   Properties:
-  #     GroupDescription: !Sub Security group created by ${AWS::StackName}
-
-  # InstanceProfile:
-  #   Type: AWS::IAM::InstanceProfile
-  #   Properties:
-  #     Roles:
-  #     - !Ref ImageBuilderRole
-
-  # ImageBuilderRole:
-  #   Type: AWS::IAM::Role
-  #   Properties:
-  #     AssumeRolePolicyDocument:
-  #       Version: 2012-10-17
-  #       Statement:
-  #       - Action: sts:AssumeRole
-  #         Effect: Allow
-  #         Principal:
-  #           Service: ec2.amazonaws.com
-  #     ManagedPolicyArns:
-  #       - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
-  #       - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
-  #       - arn:aws:iam::aws:policy/EC2InstanceProfileForImageBuilderECRContainerBuilds
 
 Outputs:
   PipelineArn:
