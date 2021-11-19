@@ -392,7 +392,7 @@ Resources:
                     logger.error(f"Change set: {change_set}")
                     raise RuntimeError(
                         f"Change set {change_set_name} was in an unpredicted state")
-            # If we reach this point, it means that out Cloudfromaiton service have issues. Assuming that no change is done
+            # If we reach this point, it means that out Cloudformaiton service have issues. Assuming that no change is done
             return False
 
 
