@@ -96,10 +96,10 @@ Resources:
                             StackName: !Sub ${AttiniEnvironmentName}-build-images
                             Parameters:
                               ProjectName: build-images
-                              RoleArn.$: !Sub $.cfnOutput.${AttiniEnvironmentName}-build-systems-security-resources.BuildProjectDefaultRoleArn
-                              BuildArtifactsBucket.$: !Sub $.cfnOutput.${AttiniEnvironmentName}-build-artifacts-bucket.BuildArtifactsBucket
+                              RoleArn.$: $.output.BuildSystemsSecurityResources.BuildProjectDefaultRoleArn
+                              BuildArtifactsBucket.$: $.output.BuildArtifactsBucket.BuildArtifactsBucket
                               ComputeType: BUILD_GENERAL1_SMALL
-                              RepositoryUri.$: !Sub $.cfnOutput.${AttiniEnvironmentName}-build-container-repository.RepositoryUri
+                              RepositoryUri.$: $.output.BuildImageRepository.RepositoryUri
                               GitUrl: https://github.com/my-orgnaization/test-repository.git # test url
 
                     -
@@ -137,11 +137,11 @@ Resources:
                             ResourceName: ContainerRecipe
                             Parameters:
                               Version: 0.1.X
-                              InstanceProfile.$: !Sub $.cfnOutput.${AttiniEnvironmentName}-build-systems-security-resources.ImageBuilderDefaultInstanceProfile
-                              SecurityGroupId.$: !Sub $.cfnOutput.${AttiniEnvironmentName}-build-systems-security-resources.DefaultSecurityGroupId
+                              InstanceProfile.$: $.output.BuildSystemsSecurityResources.ImageBuilderDefaultInstanceProfile
+                              SecurityGroupId.$: $.output.BuildSystemsSecurityResources.DefaultSecurityGroupId
                               ParentImage: public.ecr.aws/amazonlinux/amazonlinux:latest
-                              TargetRepository.$: !Sub $.cfnOutput.${AttiniEnvironmentName}-build-container-repository.RepositoryName
-                              Component.$:  !Sub $.cfnOutput.${AttiniEnvironmentName}-build-image-component.Component
+                              TargetRepository.$: $.output.BuildImageRepository.RepositoryName
+                              Component.$: $.output.BuildImageComponent.Component
 
                         BuildImageBuilder:
                           Type: AttiniCfn
@@ -151,11 +151,11 @@ Resources:
                             StackName: !Sub ${AttiniEnvironmentName}-build-image-builder
                             Parameters:
                               Version.$: !Sub $.customData.imageBuilderVersion.${AttiniEnvironmentName}-build-image-builder.version
-                              InstanceProfile.$: !Sub $.cfnOutput.${AttiniEnvironmentName}-build-systems-security-resources.ImageBuilderDefaultInstanceProfile
-                              SecurityGroupId.$: !Sub $.cfnOutput.${AttiniEnvironmentName}-build-systems-security-resources.DefaultSecurityGroupId
+                              InstanceProfile.$: $.output.BuildSystemsSecurityResources.ImageBuilderDefaultInstanceProfile
+                              SecurityGroupId.$: $.output.BuildSystemsSecurityResources.DefaultSecurityGroupId
                               ParentImage: public.ecr.aws/amazonlinux/amazonlinux:latest
-                              TargetRepository.$: !Sub $.cfnOutput.${AttiniEnvironmentName}-build-container-repository.RepositoryName
-                              Component.$:  !Sub $.cfnOutput.${AttiniEnvironmentName}-build-image-component.Component
+                              TargetRepository.$: $.output.BuildImageRepository.RepositoryName
+                              Component.$: $.output.BuildImageComponent.Component
 
                         RunBuildImageBuilder?:
                           Type: Choice
@@ -173,7 +173,7 @@ Resources:
                           Parameters:
                             Input.$: $
                             Action: RunBuildImageBuilder
-                            PipelineArn.$: !Sub $.cfnOutput.${AttiniEnvironmentName}-build-image-builder.PipelineArn
+                            PipelineArn.$: $.output.BuildImageBuilder.PipelineArn
                           End: True
 
                         BuildImageDone:
@@ -224,11 +224,11 @@ Resources:
                       ResourceName: ContainerRecipe
                       Parameters:
                         Version: 0.1.X
-                        InstanceProfile.$: !Sub $.cfnOutput.${AttiniEnvironmentName}-build-systems-security-resources.ImageBuilderDefaultInstanceProfile
-                        SecurityGroupId.$: !Sub $.cfnOutput.${AttiniEnvironmentName}-build-systems-security-resources.DefaultSecurityGroupId
+                        InstanceProfile.$: $.output.BuildSystemsSecurityResources.ImageBuilderDefaultInstanceProfile
+                        SecurityGroupId.$: $.output.BuildSystemsSecurityResources.DefaultSecurityGroupId
                         ParentImage: public.ecr.aws/amazonlinux/amazonlinux:latest
-                        TargetRepository.$: !Sub $.cfnOutput.${AttiniEnvironmentName}-application-base-image-repository.RepositoryName
-                        Component.$:  !Sub $.cfnOutput.${AttiniEnvironmentName}-application-base-image-component.Component
+                        TargetRepository.$: $.output.ApplicationBaseImage.RepositoryName
+                        Component.$: $.output.ApplicationBaseImageComponent.Component
 
                   ApplicationBaseImageBuilder:
                     Type: AttiniCfn
@@ -238,11 +238,11 @@ Resources:
                       StackName: !Sub ${AttiniEnvironmentName}-application-base-image-builder
                       Parameters:
                         Version.$: !Sub $.customData.imageBuilderVersion.${AttiniEnvironmentName}-application-base-image-builder.version
-                        InstanceProfile.$: !Sub $.cfnOutput.${AttiniEnvironmentName}-build-systems-security-resources.ImageBuilderDefaultInstanceProfile
-                        SecurityGroupId.$: !Sub $.cfnOutput.${AttiniEnvironmentName}-build-systems-security-resources.DefaultSecurityGroupId
+                        InstanceProfile.$: $.output.BuildSystemsSecurityResources.ImageBuilderDefaultInstanceProfile
+                        SecurityGroupId.$: $.output.BuildSystemsSecurityResources.DefaultSecurityGroupId
                         ParentImage: public.ecr.aws/amazonlinux/amazonlinux:latest
-                        TargetRepository.$: !Sub $.cfnOutput.${AttiniEnvironmentName}-application-base-image-repository.RepositoryName
-                        Component.$:  !Sub $.cfnOutput.${AttiniEnvironmentName}-application-base-image-component.Component
+                        TargetRepository.$: $.output.ApplicationBaseImage.RepositoryName
+                        Component.$: $.output.ApplicationBaseImageComponent.Component
 
                   RunApplicationBaseBuilder?:
                     Type: Choice
@@ -260,7 +260,7 @@ Resources:
                     Parameters:
                       Input.$: $
                       Action: RunImageBuilder
-                      PipelineArn.$: !Sub $.cfnOutput.${AttiniEnvironmentName}-application-base-image-builder.PipelineArn
+                      PipelineArn.$: $.output.ApplicationBaseImageBuilder.PipelineArn
                     End: True
 
                   ApplicationBaseImageDone:
